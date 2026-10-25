@@ -233,18 +233,15 @@ export function GamePanels(props: {
             />
           </label>
           <span className="chip">
-            {snap.restockDone && snap.restockWindowLeftS !== null ? (
-              <>
-                <PackageCheck size={12} /> {t('game.control.restocked', { s: snap.restockInS })}
-              </>
-            ) : snap.restockWindowLeftS !== null ? (
-              <>
-                <Truck size={12} /> {t('game.restock.title')}
-              </>
+            {/* 三态：窗口开着没下单（车在门口，倒计时关窗）｜已下单（不显示数字，等下一班）｜窗口没开（倒数班车到站） */}
+            {snap.restockWindowLeftS !== null ? (
+              snap.restockDone ? (
+                <><PackageCheck size={12} /> {t('game.control.restocked')}</>
+              ) : (
+                <><Truck size={12} /> {t('game.control.truck_here', { s: snap.restockWindowLeftS })}</>
+              )
             ) : (
-              <>
-                <Truck size={12} /> {t('game.control.nextRestock', { s: snap.restockInS })}
-              </>
+              <><Truck size={12} /> {t('game.control.nextRestock', { s: snap.restockInS })}</>
             )}
           </span>
         </div>

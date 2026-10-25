@@ -165,17 +165,12 @@ const NPC_BANDS = [
 ] as const
 
 /** 排队位（相对摊位中心的横向排开 + 台面前一线，比摊位脚线低所以 zIndex 压过摊身） */
-const QUEUE_MAX = 4 // 每摊视觉队列上限（sim queueCap=8，视觉只演到 4，多出来的是远处人流）
-const SLOTS_DX = [-16, -7, 2, 11] as const
-const SLOTS_DY = [89, 91, 89, 92] as const
-
-type NpcMode = 'stroll' | 'toQueue' | 'queue'
+const QUEUE_MAX = 6 // 每摊专职排队位：跟 sim queueLen 一一对应（超出部分的人不在台上演）
+const SLOTS_DX = [-20, -12, -4, 4, 12, 20] as const
+const SLOTS_DY = [89, 91, 90, 92, 89, 91] as const
 
 class NpcActor {
   view = new Container()
-  mode: NpcMode = 'stroll'
-  /** 排队剩余停留秒数（≤0 时由调度放走；闲逛态恒 0） */
-  private dwell = 0
   private body: Sprite
   private variant: (typeof NPC_VARIANTS)[number]
   private x: number
@@ -186,9 +181,6 @@ class NpcActor {
   private wait = 0
   private animT = 0
   private rng: () => number
-  private slotCx = NaN
-  private slotK = -1
-  private bobPhase: number
 
   constructor(rng: () => number) {
     this.rng = rng
@@ -197,7 +189,6 @@ class NpcActor {
     const band = NPC_BANDS[Math.floor(rng() * NPC_BANDS.length)] ?? NPC_BANDS[0]
     this.y = band.min + rng() * (band.max - band.min)
     this.speed = 10 + rng() * 10
-    this.bobPhase = rng() * Math.PI * 2
 
     const shadow = new Sprite(frame('fx/shadow'))
     shadow.anchor.set(0.5, 0.5)
@@ -209,47 +200,8 @@ class NpcActor {
     this.wait = rng() * 2
   }
 
-  /** 入队：从闲逛转排队，先走到台面前的 slot（dwell 到期后由调度放走） */
-  assignQueue(cx: number, k: number, dwellS: number): void {
-    this.mode = 'toQueue'
-    this.dwell = dwellS
-    this.wait = 0
-    this.applySlot(cx, k)
-  }
-
-  /** 对齐排队位：前客走了后面滑步补位；同位不重排（防每拍微抖） */
-  applySlot(cx: number, k: number): void {
-    if (this.mode !== 'stroll' && this.slotCx === cx && this.slotK === k) return
-    this.slotCx = cx
-    this.slotK = k
-    this.tx = cx + (SLOTS_DX[k] ?? 0) + (this.rng() * 2 - 1)
-    this.ty = (SLOTS_DY[k] ?? 90) + (this.rng() * 2 - 1)
-    if (this.mode === 'queue') this.mode = 'toQueue'
-  }
-
-  /** 出队：回归闲逛 */
-  retire(): void {
-    if (this.mode === 'stroll') return
-    this.mode = 'stroll'
-    this.dwell = 0
-    this.wait = this.rng() * 0.6
-    this.pickTarget()
-  }
-
-  get dwellLeft(): number {
-    return this.dwell
-  }
-
-  update(dt: number, t: number): void {
+  update(dt: number, _t: number): void {
     this.animT += dt
-    if (this.mode === 'queue') {
-      this.dwell -= dt
-      this.body.texture = frame(`npc/${this.variant}/0`)
-      this.view.position.set(this.x, this.y + Math.sin(t * 2.4 + this.bobPhase) * 0.5)
-      this.view.zIndex = this.y
-      return
-    }
-    // toQueue 不倒 dwell：还没走到位不算入座，避免远客半路被放走
     if (this.wait > 0) {
       this.wait -= dt
       this.body.texture = frame(`npc/${this.variant}/0`)
@@ -258,14 +210,8 @@ class NpcActor {
       const dy = this.ty - this.y
       const dist = Math.hypot(dx, dy)
       if (dist < 1) {
-        if (this.mode === 'toQueue') {
-          this.mode = 'queue'
-          this.x = this.tx
-          this.y = this.ty
-        } else {
-          this.pickTarget()
-          this.wait = this.rng() * 2
-        }
+        this.pickTarget()
+        this.wait = this.rng() * 2
       } else {
         const step = Math.min(this.speed * dt, dist)
         this.x += (dx / dist) * step
@@ -282,6 +228,44 @@ class NpcActor {
     const band = NPC_BANDS[Math.floor(this.rng() * NPC_BANDS.length)] ?? NPC_BANDS[0]
     this.tx = 8 + this.rng() * (STAGE_W - 16)
     this.ty = band.min + this.rng() * (band.max - band.min)
+  }
+}
+
+/**
+ * 专职排队小人：每摊 QUEUE_MAX 个固定角色，第 k 位亮不亮严格等于「queueLen > k」——
+ * 数字与画面永不错位（1s 一拍的快照延迟内），淡入淡出只做过渡。闲逛人流另由 NpcActor 扮演
+ */
+class QueueSlotActor {
+  view = new Container()
+  private baseY = 90
+  private alpha = 0
+  private phase: number
+
+  constructor(rng: () => number) {
+    this.phase = rng() * Math.PI * 2
+    const variant = NPC_VARIANTS[Math.floor(rng() * NPC_VARIANTS.length)] ?? 'red'
+    const shadow = new Sprite(frame('fx/shadow'))
+    shadow.anchor.set(0.5, 0.5)
+    shadow.position.set(0, -2)
+    const body = new Sprite(frame(`npc/${variant}/0`))
+    body.anchor.set(0.5, 1)
+    this.view.addChild(shadow, body)
+    this.view.visible = false
+    this.view.alpha = 0
+  }
+
+  place(cx: number, k: number): void {
+    const x = cx + (SLOTS_DX[k] ?? 0)
+    this.baseY = SLOTS_DY[k] ?? 90
+    this.view.position.set(x, this.baseY)
+    this.view.zIndex = this.baseY
+  }
+
+  update(dt: number, t: number, filled: boolean): void {
+    this.alpha += ((filled ? 1 : 0) - this.alpha) * Math.min(1, dt * 8)
+    this.view.alpha = this.alpha
+    this.view.visible = this.alpha > 0.02
+    if (this.view.visible) this.view.y = this.baseY + Math.sin(t * 2.4 + this.phase) * 0.5
   }
 }
 
@@ -302,16 +286,13 @@ export interface StreetMatchState {
   stalls: StreetStall[]
 }
 
-const PLATE_H = 21
+const PLATE_H = 16
 
-/**
- * 摊位门牌：摊名（真人=摊主名，bot=随机摊名）印在柜台前脸、桌腿之上（盖住摊子自带的小铜牌位），
- * 宽度随名字自适应；第二行只放状态（我的摊 / bot 代打 / 停业中），自己的摊琥珀底 + 上下弹跳的 ▼
- */
+/** 摊位门牌：贴柜台前脸的小尺寸双行牌（名字 + 状态），宽度随名字自适应 */
 function makePlate(cx: number): UpdatableView & { set: (s: StreetStall) => void } {
   const root = new Container()
-  // 贴在柜台前脸的自带小铜牌位（FOOT_Y-20.4 ~ -10.5）：门牌中心对齐铜牌中心，底边不压桌腿
-  root.position.set(cx, FOOT_Y - 31)
+  // 对齐柜台前脸自带的小铜牌（FOOT_Y-20.4 ~ -10.5），底边不压桌腿
+  root.position.set(cx, FOOT_Y - 24)
   // 压过摊身（zIndex 84），但排在台前排队小人（y≥88）之后：他们站在门前，门牌不该盖住人
   root.zIndex = FOOT_Y + 1
   root.visible = false
@@ -322,17 +303,17 @@ function makePlate(cx: number): UpdatableView & { set: (s: StreetStall) => void 
   marker.visible = false
   const name = new Text({
     text: '',
-    style: { fontFamily: 'ui-monospace, Menlo, Consolas, monospace', fontSize: 9, letterSpacing: 0.5, fill: 0xfff3dd },
+    style: { fontFamily: 'ui-monospace, Menlo, Consolas, monospace', fontSize: 7, fill: 0xfff3dd },
   })
   name.anchor.set(0.5, 0)
-  name.position.set(0, 2)
-  name.resolution = 4 // 名牌会随世界放大数倍：预渲高分辨率防发虚
+  name.position.set(0, 1)
+  name.resolution = 4 // 门牌随世界放大数倍：预渲高分辨率防发虚
   const sub = new Text({
     text: '',
-    style: { fontFamily: 'ui-monospace, Menlo, Consolas, monospace', fontSize: 7, letterSpacing: 0.5, fill: 0x8f8478 },
+    style: { fontFamily: 'ui-monospace, Menlo, Consolas, monospace', fontSize: 6, fill: 0x8f8478 },
   })
   sub.anchor.set(0.5, 0)
-  sub.position.set(0, 12)
+  sub.position.set(0, 8.5)
   sub.resolution = 4
   root.addChild(bg, marker, name, sub)
 
@@ -340,8 +321,8 @@ function makePlate(cx: number): UpdatableView & { set: (s: StreetStall) => void 
     root,
     set(s: StreetStall) {
       root.visible = true
-      // 摊名截断到 10 字：门牌悬挂允许出檐，但不能压到邻摊
-      name.text = s.name.length > 10 ? `${s.name.slice(0, 10)}…` : s.name
+      // 摊名截断到 8 字：门牌贴摊，不能宽过摊身太多
+      name.text = s.name.length > 8 ? `${s.name.slice(0, 8)}…` : s.name
       let subText = ''
       let subColor = 0x8f8478
       if (s.closedForS > 0) {
@@ -357,19 +338,19 @@ function makePlate(cx: number): UpdatableView & { set: (s: StreetStall) => void 
       sub.visible = subText !== ''
       sub.style.fill = subColor
       name.style.fill = s.isPlayer ? 0x241807 : 0xfff3dd
-      const w = Math.max(name.width, sub.visible ? sub.width : 0) + 16
+      const w = Math.max(name.width, sub.visible ? sub.width : 0) + 10
       bg.clear()
-      bg.roundRect(-w / 2, 0, w, PLATE_H, 4)
+      bg.roundRect(-w / 2, 0, w, PLATE_H, 3)
       if (s.isPlayer) {
         bg.fill({ color: 0xe8b04b, alpha: 0.94 })
       } else {
         bg.fill({ color: 0x241a12, alpha: 0.88 })
-        bg.roundRect(-w / 2, 0, w, PLATE_H, 4).stroke({ color: 0x6b5236, width: 1, alpha: 0.85 })
+        bg.roundRect(-w / 2, 0, w, PLATE_H, 3).stroke({ color: 0x6b5236, width: 1, alpha: 0.85 })
       }
       marker.visible = s.isPlayer
     },
     update(t: number) {
-      if (marker.visible) marker.y = -7 + Math.sin(t * 4) * 1.6
+      if (marker.visible) marker.y = -7 + Math.sin(t * 4) * 1.4
     },
   }
 }
@@ -457,32 +438,17 @@ export async function initStreet(
     actors.addChild(n.view)
   }
 
-  // ---------- 人群调度：把 sim 的 queueLen 演成台面前的排队 ----------
-  const queues: NpcActor[][] = STALLS.map(() => [])
+  // ---------- 排队专职位：第 k 位亮不亮严格等于「queueLen > k」，数字与画面永不错位 ----------
+  const queueSlots: QueueSlotActor[][] = STALLS.map((s) => {
+    const cx = s.x + 32
+    return SLOTS_DX.map((_, k) => {
+      const q = new QueueSlotActor(rng)
+      q.place(cx, k)
+      actors.addChild(q.view)
+      return q
+    })
+  })
   const queueTargets = STALLS.map(() => 0)
-
-  function pickStroller(): NpcActor | null {
-    const pool = npcs.filter((n) => n.mode === 'stroll')
-    return pool.length === 0 ? null : (pool[Math.floor(rng() * pool.length)] ?? null)
-  }
-
-  function reconcileQueues(): void {
-    for (let i = 0; i < queues.length; i++) {
-      const q = queues[i]!
-      for (const n of q) if (n.dwellLeft <= 0) n.retire() // 到点的客人散去
-      const kept = q.filter((n) => n.mode !== 'stroll')
-      q.length = 0
-      q.push(...kept)
-      while (q.length > (queueTargets[i] ?? 0)) q.pop()?.retire()
-      while (q.length < (queueTargets[i] ?? 0)) {
-        const n = pickStroller()
-        if (!n) break
-        n.assignQueue(STALLS[i]!.x + 32, q.length, 7 + rng() * 9)
-        q.push(n)
-      }
-      q.forEach((n, k) => n.applySlot(STALLS[i]!.x + 32, k)) // 滑步补位
-    }
-  }
 
   // 暗角：屏幕空间覆盖层（不随世界缩放）
   const vignette = new Sprite(frame('fx/vignette'))
@@ -505,7 +471,6 @@ export async function initStreet(
 
   let elapsed = 0
   let fpsAcc = 0
-  let reconcileAcc = 0
   let destroyed = false
   const tick = (ticker: Ticker): void => {
     if (destroyed) return
@@ -513,10 +478,9 @@ export async function initStreet(
     elapsed += dt
     for (const u of updatables) u.update(elapsed)
     for (const n of npcs) n.update(dt, elapsed)
-    reconcileAcc += dt
-    if (reconcileAcc >= 0.8) {
-      reconcileAcc = 0
-      reconcileQueues()
+    for (const [i, slots] of queueSlots.entries()) {
+      const target = queueTargets[i] ?? 0
+      for (const [k, slot] of slots.entries()) slot.update(dt, elapsed, k < target)
     }
     fpsAcc += ticker.deltaMS
     if (fpsAcc >= 500) {
@@ -538,14 +502,12 @@ export async function initStreet(
       if (!m) {
         queueTargets.fill(0)
         for (const p of plates) p.root.visible = false
-        reconcileQueues()
         return
       }
       m.stalls.slice(0, plates.length).forEach((s, i) => {
         plates[i]!.set(s)
         queueTargets[i] = Math.min(QUEUE_MAX, s.queueLen)
       })
-      reconcileQueues()
     },
   }
 }
