@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars*
+*.local
+.DS_Store
+coverage/
+*.tsbuildinfo
+# server-node 本地数据库
+data/
+*.sqlite*

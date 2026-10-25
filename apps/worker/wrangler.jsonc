@@ -1,0 +1,42 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "burnless",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  // 自有域名（账号内 active zone）：workers.dev 国内不可用，生产只走自定义域
+  "routes": [{ "pattern": "burnless.20020612.xyz", "custom_domain": true }],
+  "workers_dev": false,
+  "assets": {
+    "directory": "../web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    // /api 与 /ws 永远先走 worker；静态资源直接由 assets 层服务（不进 worker）
+    "run_worker_first": ["/api/*", "/ws/*"]
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "MATCH_ROOM", "class_name": "MatchRoom" },
+      { "name": "MATCH_MAKER", "class_name": "MatchMaker" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["MatchRoom"] },
+    { "tag": "v2", "new_sqlite_classes": ["MatchMaker"] }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "burnless",
+      "database_id": "87130f6b-aca0-4fd6-90da-9b1acd817a8f"
+    }
+  ],
+  // W8 找回密码/补绑邮箱发信走 Resend REST API（免费档，见 src/mail.ts）：
+  // CF 自家 Email Sending 需要 Workers Paid（$5/月），免费计划上改用 Resend + DNS 验证域名
+  "triggers": {
+    "crons": ["0 3 * * *"]
+  },
+  "observability": {
+    "enabled": true,
+    "traces": { "enabled": true }
+  }
+}

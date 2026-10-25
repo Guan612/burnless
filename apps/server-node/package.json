@@ -1,0 +1,30 @@
+{
+  "name": "@burnless/server-node",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "自部署逃生舱：同一套 Hono 路由跑 Node + ws + better-sqlite3（完全脱离 Cloudflare）",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "node build.mjs",
+    "start": "node dist/server.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@burnless/shared": "workspace:*",
+    "@hono/node-server": "^1.14.0",
+    "better-auth": "^1.7.12",
+    "better-sqlite3": "^13.0.3",
+    "drizzle-orm": "^0.45.4",
+    "hono": "^4.13.13",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.6.5",
+    "@types/ws": "^8.18.0",
+    "esbuild": "^0.25.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.7.0"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "@burnless/sprites",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./atlas-data": "./generated/atlas-data.ts",
+    "./atlas.png": "./generated/atlas.png"
+  },
+  "scripts": {
+    "sprites": "node src/generate.mjs",
+    "preview": "node src/preview.mjs"
+  },
+  "dependencies": {
+    "pngjs": "^7.0.0"
+  }
+}

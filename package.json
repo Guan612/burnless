@@ -1,0 +1,31 @@
+{
+  "name": "burnless",
+  "version": "0.1.0",
+  "private": true,
+  "description": "不烧心 / Burnless — 像素风 2.5D 多人对战经营 H5 游戏，全栈 Cloudflare 免费额度",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "dev:web": "pnpm --filter @burnless/web dev",
+    "dev:worker": "pnpm --filter @burnless/worker dev",
+    "dev:node": "pnpm --filter @burnless/server-node dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run",
+    "balance": "vitest run packages/shared/test/balance.report.test.ts",
+    "gen:types": "pnpm --filter @burnless/worker types",
+    "smoke": "node scripts/smoke-ws.mjs",
+    "smoke:match": "node scripts/smoke-match.mjs",
+    "smoke:node": "node scripts/smoke-node.mjs",
+    "deploy": "pnpm --filter @burnless/web build && pnpm --filter @burnless/worker deploy"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "better-sqlite3": "^13.0.3",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}
