@@ -90,7 +90,7 @@ export function GamePanels(props: {
   isHost: boolean
   /** 房主点开局（空位 bot 补位） */
   onStart: () => void
-  /** 等待期取消：回大厅，等待房无人后服务器自动回收 */
+  /** 回大厅：等待期取消（等待房无人后服务器自动回收）与结算页共用 */
   onCancel: () => void
 }) {
   const { snap, toasts, send, restart, matchId, status, isHost, onStart, onCancel } = props
@@ -387,6 +387,15 @@ export function GamePanels(props: {
               <li className="score"><Trophy size={12} /> {t('game.result.score')}：<b>{snap.result.score}</b></li>
             </ul>
             <div className="modal-actions">
+              <button
+                className="ghost"
+                onClick={() => {
+                  sfx.play('ui_tick')
+                  onCancel()
+                }}
+              >
+                {t('game.result.lobby')}
+              </button>
               <button
                 onClick={() => {
                   sfx.play('ui_confirm')

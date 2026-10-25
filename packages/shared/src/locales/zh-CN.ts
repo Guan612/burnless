@@ -121,6 +121,7 @@ export const zhCN = {
   'game.result.fines': '罚款合计',
   'game.result.score': '综合分 = 营收 + 口碑 × 8',
   'game.result.again': '再开一局',
+  'game.result.lobby': '回到大厅',
   'game.grade.apprentice': '大排档学徒',
   'game.grade.veteran': '街头老手',
   'game.grade.rising': '街区红人',
