@@ -19,11 +19,16 @@ function createAuthValue(env: Env) {
         await sendResetMail(env, user.name || '摊主', user.email, url)
       },
     },
-    // W8 补绑邮箱：changeEmail 向新邮箱发确认信，用户点链接后邮箱才真正更新（顺便验证归属）
+    // W8 邮箱验证信：1.7.12 的 changeEmail 补绑流程复用此回调发确认信（未验证邮箱走此兜底，
+    // 入参 user.email 已被替换为新邮箱），点链接后邮箱才真正更新（顺便验证归属）
     emailVerification: {
       sendVerificationEmail: async ({ user, url }) => {
         await sendBindMail(env, user.name || '摊主', user.email, url)
       },
+    },
+    // W8 补绑邮箱：changeEmail 默认关闭（不开就报 CHANGE_EMAIL_DISABLED），显式开启即可
+    user: {
+      changeEmail: { enabled: true },
     },
     plugins: [
       // W8 用户名账号：注册可选 username（纯用户名号用保留域 @users.local 占位邮箱，见 AccountMenu）
