@@ -8,7 +8,7 @@
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "types": "wrangler types",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler d1 migrations apply DB --remote && wrangler deploy"
   },
   "dependencies": {
     "@burnless/shared": "workspace:*",

@@ -3,9 +3,9 @@
   "name": "burnless",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
-  // 自有域名（账号内 active zone）：workers.dev 国内不可用，生产只走自定义域
-  "routes": [{ "pattern": "burnless.20020612.xyz", "custom_domain": true }],
-  "workers_dev": false,
+  // 一键部署（Deploy to Cloudflare 按钮）友好：别的账号没有本项目的 zone，routes 不能写死。
+  // 默认开 workers.dev（大陆访问受限）；自有域名在 CF 控制台 Worker → Settings → Domains & Routes 绑定
+  "workers_dev": true,
   "assets": {
     "directory": "../web/dist",
     "binding": "ASSETS",

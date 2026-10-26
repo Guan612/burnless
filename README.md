@@ -4,6 +4,8 @@
 
 > 在线试玩：**https://burnless.20020612.xyz** （手机横屏 / 桌面均可，匿名进站即玩）
 
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Guan612/burnless)
+
 - 🍢 **一局 8 分钟**：进货（良心/狠活灵魂抉择）→ 定价 → 应对随机事件（人潮/突查/顾客验货）
 - 🔥 **明牌博弈**：所有人的烧心值全局可见——等对手烧心值最高时举报他
 - 🤖 **Bot 补位**：三种策略人设（良心型/平衡型/投机型）兼当新手教学，快速匹配不等人
@@ -55,24 +57,42 @@ pnpm dev:web       # http://localhost:5173
 
 ## 部署路径 1：Cloudflare（主推，免费额度内零成本）
 
+### 一键部署（推荐）
+
+点上面的按钮 → 授权 GitHub → Cloudflare 把仓库克隆进你的账号，按 `apps/worker/wrangler.jsonc`
+自动开通 D1 / Durable Objects（并改写 `database_id`），随后自动构建部署。你只需要：
+
+1. 设置页按提示填 secrets（清单见 `apps/worker/.dev.vars.example`）：`BETTER_AUTH_SECRET` **必填**
+   （`openssl rand -base64 32` 生成，缺失则无法建立会话、进站即挂）；`GITHUB_*` / `RESEND_API_KEY`
+   可选，不填则相应功能隐藏。
+2. 部署完成得到一个 `*.workers.dev` 地址，直接开玩——D1 建表随部署自动执行
+   （deploy script 内置 `wrangler d1 migrations apply DB --remote`），无需手工迁移。
+3. 大陆访问 workers.dev 受限：在 CF 控制台 Worker → Settings → Domains & Routes 绑自有域名即可。
+
+### 手动部署
+
 ```bash
-# 1. 登录 + 创建 D1
+# 1. 登录 + 创建 D1（database_id 填进 apps/worker/wrangler.jsonc）
 wrangler login
-wrangler d1 create burnless        # 把返回的 database_id 填进 apps/worker/wrangler.jsonc
-wrangler d1 execute burnless --remote --file=apps/worker/migrations/0001_w6_init.sql
+wrangler d1 create burnless
+wrangler d1 migrations apply DB --remote --config apps/worker/wrangler.jsonc   # 应用 apps/worker/migrations/ 全部迁移
 
 # 2. secrets
 wrangler secret put BETTER_AUTH_SECRET --config apps/worker/wrangler.jsonc
 # 可选：GitHub OAuth 绑定（回调地址 https://<你的域名>/api/auth/callback/github）
 wrangler secret put GITHUB_CLIENT_ID --config apps/worker/wrangler.jsonc
 wrangler secret put GITHUB_CLIENT_SECRET --config apps/worker/wrangler.jsonc
+# 可选：找回密码/补绑邮箱发信（Resend）
+wrangler secret put RESEND_API_KEY --config apps/worker/wrangler.jsonc
 
 # 3. 部署（web 产物 + worker 一起）
 pnpm deploy
 ```
 
-把 `wrangler.jsonc` 里的 `routes` 换成你自己的域名（需已接入 Cloudflare zone），五分钟出实例。
-`.github/workflows/ci.yml` 会在 push 主分支时自动跑 typecheck + test + build + deploy（需配 `CLOUDFLARE_API_TOKEN` secret）。
+部署默认开 `*.workers.dev` 域名；自有域名在 CF 控制台 Worker → Settings → Domains & Routes 绑定
+（需已接入 Cloudflare zone），五分钟出实例。
+`.github/workflows/ci.yml` 在 push / PR 时跑 typecheck + test + build 质量门禁；线上部署走
+Cloudflare Workers Builds（CF 控制台把仓库关联到 Worker，每次 push 自动构建部署）。
 
 ## 部署路径 2：Node 自部署（逃生舱，完全脱离 Cloudflare）
 

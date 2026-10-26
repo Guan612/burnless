@@ -1,0 +1,14 @@
+# Deploy to Cloudflare 一键部署按本清单提示填写 secrets（值会写成线上 Worker secrets）；
+# 本地 wrangler dev 把它复制为 .dev.vars 使用。线上手工设置等价于：
+#   wrangler secret put <NAME> --config apps/worker/wrangler.jsonc
+
+# 会话签名密钥（必填：缺失时 better-auth 无法建立会话，进站即挂）：
+#   openssl rand -base64 32
+BETTER_AUTH_SECRET=
+
+# 可选：GitHub OAuth 绑定（回调 https://<域名>/api/auth/callback/github；不填则前端隐藏入口）
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
+
+# 可选：找回密码/补绑邮箱发信走 Resend REST API（见 src/mail.ts；不填则该功能关闭）
+RESEND_API_KEY=

@@ -4,6 +4,8 @@ A pixel-art 2.5D multiplayer hawker-management brawler in the browser. Three sta
 
 > Play now: **https://burnless.20020612.xyz** (desktop or mobile-landscape, anonymous join, no signup)
 
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Guan612/burnless)
+
 - 🍢 **8-minute matches**: restock (the honest-vs-shady soul decision) → price → react to random events (surges, snap inspections, customer spot-checks)
 - 🔥 **Open-information bluffing**: everyone's heartburn meter is public — report your rival when it peaks
 - 🤖 **Bot fill-ins**: three persona strategies (honest / balanced / shady) double as the tutorial; quick match never waits
@@ -54,20 +56,45 @@ pnpm dev:web       # http://localhost:5173
 
 ## Deploy path 1: Cloudflare (recommended — free tier, zero cost)
 
-```bash
-wrangler login
-wrangler d1 create burnless        # put the returned database_id into apps/worker/wrangler.jsonc
-wrangler d1 execute burnless --remote --file=apps/worker/migrations/0001_w6_init.sql
+### One-click deploy (recommended)
 
+Click the button above → authorize GitHub → Cloudflare clones the repo into your account,
+provisions D1 / Durable Objects per `apps/worker/wrangler.jsonc` (rewriting the `database_id`),
+then builds and deploys. All you do:
+
+1. Fill in the secrets at the setup prompt (checklist in `apps/worker/.dev.vars.example`):
+   `BETTER_AUTH_SECRET` is **required** (generate with `openssl rand -base64 32` — sessions fail
+   without it); `GITHUB_*` / `RESEND_API_KEY` are optional and hide their features when unset.
+2. You get a `*.workers.dev` URL when done — play immediately. D1 tables are created as part of
+   the deploy (the deploy script runs `wrangler d1 migrations apply DB --remote`), no manual SQL.
+3. workers.dev is unreachable from mainland China: bind your own domain under
+   Worker → Settings → Domains & Routes in the CF dashboard.
+
+### Manual deploy
+
+```bash
+# 1. login + create D1 (fill the database_id into apps/worker/wrangler.jsonc)
+wrangler login
+wrangler d1 create burnless
+wrangler d1 migrations apply DB --remote --config apps/worker/wrangler.jsonc   # applies apps/worker/migrations/
+
+# 2. secrets
 wrangler secret put BETTER_AUTH_SECRET --config apps/worker/wrangler.jsonc
 # optional GitHub OAuth linking (callback: https://<your-domain>/api/auth/callback/github)
 wrangler secret put GITHUB_CLIENT_ID --config apps/worker/wrangler.jsonc
 wrangler secret put GITHUB_CLIENT_SECRET --config apps/worker/wrangler.jsonc
+# optional: password-reset / email-link mail delivery (Resend)
+wrangler secret put RESEND_API_KEY --config apps/worker/wrangler.jsonc
 
+# 3. deploy (web build + worker together)
 pnpm deploy
 ```
 
-Swap the `routes` entry in `wrangler.jsonc` for your own domain (zone must be on Cloudflare). `.github/workflows/ci.yml` runs typecheck + test + build + deploy on push (needs a `CLOUDFLARE_API_TOKEN` secret).
+The deploy serves a `*.workers.dev` URL by default; bind your own domain under
+Worker → Settings → Domains & Routes in the CF dashboard (zone must be on Cloudflare).
+`.github/workflows/ci.yml` runs typecheck + test + build as a quality gate on push / PR;
+production deploys go through Cloudflare Workers Builds (link the repo to the Worker in the
+CF dashboard — every push builds and deploys automatically).
 
 ## Deploy path 2: Node self-host (escape hatch — no Cloudflare at all)
 
