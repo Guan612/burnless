@@ -13,6 +13,19 @@ export function createAuth(db: Database.Database, cfg: NodeConfig) {
   return betterAuth({
     secret: cfg.secret,
     database: drizzleAdapter(drizzle(db, { schema: authSchema }), { provider: 'sqlite', schema: authSchema }),
+    // 与 worker 对齐：cf-connecting-ip 优先（若经 CF 代理），x-forwarded-for 兜底
+    advanced: {
+      ipAddress: { ipAddressHeaders: ['cf-connecting-ip', 'x-forwarded-for'] },
+    },
+    // 邮件端点与 worker 同款收紧（单进程内存计数本就准确，无需落库；enabled 显式开与 worker 行为对齐）
+    rateLimit: {
+      enabled: true,
+      customRules: {
+        '/request-password-reset': { window: 3600, max: 5 },
+        '/send-verification-email': { window: 3600, max: 5 },
+        '/change-email': { window: 3600, max: 5 },
+      },
+    },
     plugins: [anonymous()],
     socialProviders: {
       ...(cfg.github ? { github: { clientId: cfg.github.clientId, clientSecret: cfg.github.clientSecret } } : {}),

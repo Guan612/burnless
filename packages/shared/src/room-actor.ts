@@ -9,6 +9,9 @@ export interface RoomActorOptions {
 
 const DEFAULT_HISTORY_LIMIT = 50
 const MAX_TEXT_LENGTH = 500
+/** 单连接广播节流：1s 内最多放行 5 条 echo，超出直接丢弃并回错误帧（防单点刷屏放大到全房） */
+const ECHO_RATE_MAX = 5
+const ECHO_RATE_WINDOW_MS = 1000
 
 /**
  * 房间内核：全部房间逻辑都在这个纯类里——无任何 runtime 依赖，时钟注入（决策 #13）。
@@ -17,6 +20,7 @@ const MAX_TEXT_LENGTH = 500
  */
 export class RoomActor {
   private clients = new Map<string, SendFn>()
+  private echoHits = new Map<string, number[]>()
   private history: EchoEntry[] = []
   private seq = 0
 
@@ -37,6 +41,7 @@ export class RoomActor {
 
   leave(id: string): void {
     if (!this.clients.delete(id)) return
+    this.echoHits.delete(id)
     this.broadcast({ type: 'left', id, at: this.clock.now() })
   }
 
@@ -51,7 +56,16 @@ export class RoomActor {
       case 'hello':
         return
       case 'echo': {
-        const entry: EchoEntry = { seq: ++this.seq, from, text: msg.text, at: this.clock.now() }
+        const now = this.clock.now()
+        const hits = (this.echoHits.get(from) ?? []).filter((t) => now - t < ECHO_RATE_WINDOW_MS)
+        if (hits.length >= ECHO_RATE_MAX) {
+          this.echoHits.set(from, hits)
+          this.clients.get(from)?.({ type: 'error', message: 'too many messages' })
+          return
+        }
+        hits.push(now)
+        this.echoHits.set(from, hits)
+        const entry: EchoEntry = { seq: ++this.seq, from, text: msg.text, at: now }
         this.history.push(entry)
         if (this.history.length > this.historyLimit) {
           this.history.splice(0, this.history.length - this.historyLimit)

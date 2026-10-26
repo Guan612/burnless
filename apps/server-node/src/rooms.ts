@@ -40,7 +40,7 @@ export class NodeRoom {
     return this.sockets.size === 0 && (!this.match || !this.match.running)
   }
 
-  connect(url: URL, socket: WsSocket): void {
+  connect(url: URL, socket: WsSocket, verified?: { id: string }): void {
     const kind = url.pathname.startsWith('/ws/match/') ? 'match' : 'echo'
     if (kind === 'match') this.matchId ??= url.pathname.split('/').pop() ?? null
     const id = this.deps.newToken()
@@ -75,7 +75,8 @@ export class NodeRoom {
           return ratings
         },
       })
-      this.match.attach(id, (msg) => this.send(socket, msg))
+      // verified：入口 upgrade 处验证过的会话身份（回声房不传；match 壳必传，null 走无身份降级）
+      this.match.attach(id, (msg) => this.send(socket, msg), verified ?? null)
       this.ensureTicker()
       // 与 DO 壳一致：不发欢迎帧，入座等首条 hello/resume
     } else {

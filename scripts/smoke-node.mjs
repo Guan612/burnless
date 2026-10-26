@@ -90,8 +90,18 @@ const run = async () => {
   if (!res.ok || !match.matchId) fail(`quick match 失败: ${res.status}`)
   ok(`快速匹配 → ${match.matchId}（queued=${match.queued}）`)
 
-  // 4) 对局房入座
-  const wsMatch = new WebSocket(`${BASE.replace('http', 'ws')}/ws/match/${match.matchId}`)
+  // 4) 对局房入座（对局房要求会话，先匿名登录拿 cookie）
+  const login = await fetch(`${BASE}/api/auth/sign-in/anonymous`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{}',
+  })
+  if (!login.ok) fail(`匿名登录失败: ${login.status}`)
+  const cookie = (login.headers.get('set-cookie') ?? '').split(';')[0]
+  if (!cookie) fail('登录响应里没有 set-cookie')
+  const wsMatch = new WebSocket(`${BASE.replace('http', 'ws')}/ws/match/${match.matchId}`, {
+    headers: { cookie },
+  })
   const joined = await new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error('match_welcome 10s 超时')), 10_000)
     wsMatch.addEventListener('open', () => wsMatch.send(JSON.stringify({ type: 'hello', player: { id: 'smoke-player' } })))

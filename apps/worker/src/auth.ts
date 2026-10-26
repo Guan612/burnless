@@ -11,6 +11,24 @@ function createAuthValue(env: Env) {
   return betterAuth({
     secret: env.BETTER_AUTH_SECRET,
     database: drizzleAdapter(drizzle(env.DB, { schema: authSchema }), { provider: 'sqlite', schema: authSchema }),
+    // Cloudflare 边缘的权威客户端 IP 头（单值、不可伪造）；x-forwarded-for 兜底（Node 逃生舱/本地）
+    advanced: {
+      ipAddress: { ipAddressHeaders: ['cf-connecting-ip', 'x-forwarded-for'] },
+    },
+    // 限流落库：Workers 多 isolate 内存计数形同虚设；计数行进 rate_limit 表（迁移 0003），全局一致。
+    // enabled 必须显式开——workerd 没有 process.env.NODE_ENV，better-auth 的 isProduction 恒 false，
+    // 默认配置下生产环境限流根本不生效。邮件端点收紧到 5 封/小时/IP：默认 3 次/分钟理论上 1 小时
+    // 能发 180 封，够把 Resend 免费档 100 封/天的配额打爆，也会变成对受害者邮箱的轰炸。
+    // 正常使用一小时绝不会要 5 封验证信。（1.7 的找回密码路由是 /request-password-reset）
+    rateLimit: {
+      enabled: true,
+      storage: 'database',
+      customRules: {
+        '/request-password-reset': { window: 3600, max: 5 },
+        '/send-verification-email': { window: 3600, max: 5 },
+        '/change-email': { window: 3600, max: 5 },
+      },
+    },
     // W8 邮箱账号：Workers 上 better-auth 自动走 @noble 纯 JS scrypt（node:crypto 不可用），无需额外配置
     emailAndPassword: {
       enabled: true,

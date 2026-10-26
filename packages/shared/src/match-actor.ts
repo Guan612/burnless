@@ -40,13 +40,19 @@ interface Conn {
   send: SendFn
   /** undefined = 尚未入座（等首条 hello/resume）；null = 观战；string = 座位 id */
   seatId: string | null | undefined
+  /**
+   * 传输壳验证过的玩家身份：object = 已认证（id 权威，结算落库认它）；null = 已认证但无会话
+   * （入座可玩但不落库）；undefined = 壳未做验证（纯测试环境，退回信任客户端自报）。
+   */
+  verified: { id: string } | null | undefined
 }
 
 const MAX_TOKEN_LENGTH = 100
 
 /**
  * 对局房间内核（W4）：全部房间逻辑都在这个纯类里——无 runtime 依赖、定时器外部注入（决策 #13）。
- * 职责：座位分配 / 续座令牌 / intent 校验与应用 / 逐座位个性化快照与事件分发。
+ * 职责：座位分配 / 续座令牌 / 服务端身份裁决（attach 注入，客户端自报 id 仅测试环境可用）/
+ * intent 校验与应用 / 逐座位个性化快照与事件分发。
  * Cloudflare MatchRoom DO 与 Node 适配器只是它的 WebSocket 壳 + 定时器壳：
  * 壳在连接建立时 attach，按节奏调 tick(dt) 推进模拟。
  *
@@ -103,9 +109,9 @@ export class MatchActor {
     return snap
   }
 
-  /** 传输壳：WebSocket 建立即挂载管道；入座等客户端第一条消息 */
-  attach(connId: string, send: SendFn): void {
-    this.conns.set(connId, { id: connId, send, seatId: undefined })
+  /** 传输壳：WebSocket 建立即挂载管道；入座等客户端第一条消息。verified 见 Conn.verified */
+  attach(connId: string, send: SendFn, verified?: { id: string } | null): void {
+    this.conns.set(connId, { id: connId, send, seatId: undefined, verified })
   }
 
   leave(connId: string): void {
@@ -123,10 +129,10 @@ export class MatchActor {
     }
     switch (msg.type) {
       case 'hello':
-        if (conn.seatId === undefined) this.joinSeat(conn, null, msg.player)
+        if (conn.seatId === undefined) this.joinSeat(conn, null, this.resolveIdentity(conn, msg.player))
         return
       case 'resume':
-        if (conn.seatId === undefined) this.joinSeat(conn, msg.token, msg.player)
+        if (conn.seatId === undefined) this.joinSeat(conn, msg.token, this.resolveIdentity(conn, msg.player))
         return
       case 'intent': {
         if (typeof conn.seatId !== 'string') {
@@ -203,8 +209,24 @@ export class MatchActor {
       .catch((err) => console.error('[match] onEnded failed:', err))
   }
 
+  /**
+   * 身份裁决：壳注入了验证结果时以服务端为准——id 一律用会话里的（客户端自报 id 作废），
+   * 昵称纯展示沿用客户端声明（≤32 字，只印门牌不落库）。null = 已验证无会话：可玩但不落库。
+   * undefined = 壳未做验证（纯测试/未接线的壳），退回信任客户端自报的旧行为。
+   */
+  private resolveIdentity(conn: Conn, claimed: PlayerIdentity | undefined): PlayerIdentity | undefined {
+    if (conn.verified === undefined) return claimed
+    if (conn.verified === null) return undefined
+    return { id: conn.verified.id, name: claimed?.name }
+  }
+
   private joinSeat(conn: Conn, resumeToken: string | null, player?: PlayerIdentity): void {
-    const resumedSeat = resumeToken ? (this.tokens.get(resumeToken) ?? null) : null
+    let resumedSeat = resumeToken ? (this.tokens.get(resumeToken) ?? null) : null
+    // 座位防盗号：座位已认领在某人名下时，续座者必须同身份（无身份也不行），否则令牌作废降级新座
+    if (resumedSeat) {
+      const owner = this.seatPlayers.get(resumedSeat)
+      if (owner && owner.id !== player?.id) resumedSeat = null
+    }
     let seatId = resumedSeat
     let token = resumeToken
     if (!seatId) {

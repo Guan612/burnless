@@ -36,6 +36,10 @@ export class MatchRoom extends DurableObject<Env> {
       return new Response('expected websocket upgrade', { status: 426 })
     }
     const kind = new URL(request.url).pathname.startsWith('/ws/match/') ? 'match' : 'echo'
+    // 入口路由验证过会话后覆盖的信任头（客户端无法直连 DO，也带不进来）：
+    // 有值 = 已认证玩家 id；空 = 已验证无会话（可玩不落库）
+    const verifiedId = request.headers.get('x-verified-player-id')
+    const verified: { id: string } | null = verifiedId ? { id: verifiedId } : null
     if (kind === 'match') {
       // 房间号即 match_id（落库用）
       this.matchIdCache ??= new URL(request.url).pathname.split('/').pop() ?? null
@@ -78,7 +82,7 @@ export class MatchRoom extends DurableObject<Env> {
           return ratings
         },
       })
-      this.match.attach(id, (msg) => this.send(server, msg))
+      this.match.attach(id, (msg) => this.send(server, msg), verified)
       this.ensureTicker()
       // match 房不发欢迎帧：入座等首条 hello/resume（防重连瞬占新座位），welcome 由 actor 回
     } else {

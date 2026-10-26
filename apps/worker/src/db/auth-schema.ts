@@ -58,3 +58,12 @@ export const verification = sqliteTable('verification', {
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
 })
+
+// better-auth 限流落库（rateLimit.storage = 'database'）：Workers 多 isolate 内存计数各算各的，
+// 落 D1 才是全局一致的计数器。key = ip + path，lastRequest 存毫秒整数（非 timestamp 模式）
+export const rateLimit = sqliteTable('rate_limit', {
+  id: text('id').primaryKey(),
+  key: text('key').notNull().unique(),
+  count: integer('count').notNull(),
+  lastRequest: integer('last_request').notNull(),
+})

@@ -17,7 +17,8 @@ export type ClientMessage =
   | { type: 'resume'; token: string; player?: PlayerIdentity }
   | { type: 'start' }
 
-/** 玩家身份（W6：better-auth 匿名会话的用户 id；MVP 阶段对局层信任此字段，伪造治理留 TODO） */
+/** 玩家身份（better-auth 会话的用户 id）。id 由服务端在传输壳校验覆盖（见 MatchActor.resolveIdentity），
+ *  客户端自报 id 仅测试壳可用；name 纯展示（印门牌），不超过 32 字 */
 export interface PlayerIdentity {
   id: string
   name?: string

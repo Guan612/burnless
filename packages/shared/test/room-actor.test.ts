@@ -70,4 +70,33 @@ describe('RoomActor 回声房内核', () => {
     expect(welcome.history).toHaveLength(3)
     expect(welcome.history.map((e) => e.text)).toEqual(['msg-3', 'msg-4', 'msg-5'])
   })
+
+  it('echo 节流：1s 窗口内超 5 条被丢弃并回错误帧，窗口滑过恢复', () => {
+    const { clock, actor, inbox, join } = setup()
+    join('a')
+    join('b') // 观察广播是否被抑制
+
+    for (let i = 1; i <= 5; i++) actor.message('a', { type: 'echo', text: `ok-${i}` })
+    actor.message('a', { type: 'echo', text: 'dropped' })
+
+    const aMsgs = inbox.get('a')!
+    const echoes = aMsgs.filter((m) => m.type === 'echo')
+    expect(echoes).toHaveLength(5) // 第 6 条没广播
+    expect(aMsgs).toContainEqual(expect.objectContaining({ type: 'error', message: 'too many messages' }))
+    expect(inbox.get('b')!.filter((m) => m.type === 'echo')).toHaveLength(5)
+
+    clock.advance(1000) // 窗口滑过 → 恢复放行
+    actor.message('a', { type: 'echo', text: 'again' })
+    expect(inbox.get('b')!.filter((m) => m.type === 'echo')).toHaveLength(6)
+  })
+
+  it('echo 节流计数随 leave 清理，不泄漏', () => {
+    const { actor, inbox, join } = setup()
+    join('a')
+    for (let i = 1; i <= 5; i++) actor.message('a', { type: 'echo', text: `ok-${i}` })
+    actor.leave('a')
+    join('a') // 同 id 重进：计数已清零
+    actor.message('a', { type: 'echo', text: 'fresh' })
+    expect(inbox.get('a')!.filter((m) => m.type === 'echo').some((m) => m.text === 'fresh')).toBe(true)
+  })
 })

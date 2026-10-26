@@ -126,10 +126,27 @@ const server = serve({ fetch: app.fetch, port: cfg.port }, (info) => {
   console.log(`[burnless-node] 不烧心服务已就绪 → http://localhost:${info.port}（房间数 ${rooms.size}）`)
 })
 
-server.on('upgrade', (req, socket, head) => {
+server.on('upgrade', async (req, socket, head) => {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
   if (!WS_PATH.test(url.pathname)) {
     socket.destroy()
+    return
+  }
+  // 对局房与 worker 同款硬门禁：必须有会话（匿名也算），落库身份认会话 id（防伪造段位污染）
+  if (url.pathname.startsWith('/ws/match/')) {
+    let verified: { id: string } | null = null
+    try {
+      const session = await auth.api.getSession({ headers: new Headers(req.headers as Record<string, string>) })
+      if (session?.user) verified = { id: session.user.id }
+    } catch {
+      // 无会话/坏 cookie：verified 保持 null（可玩不落库）
+    }
+    if (!verified) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
+      socket.destroy()
+      return
+    }
+    wss.handleUpgrade(req, socket, head, (ws) => roomFor(url.pathname).connect(url, ws, verified))
     return
   }
   wss.handleUpgrade(req, socket, head, (ws) => roomFor(url.pathname).connect(url, ws))

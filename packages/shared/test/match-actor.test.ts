@@ -19,10 +19,10 @@ function setup(
     ...(opts ?? {}),
   })
   const inbox = new Map<string, ServerMessage[]>()
-  /** 挂载连接并发送首条消息（hello / resume），返回收到的消息列表 */
-  const connect = (id: string, first: ClientMessage): ServerMessage[] => {
+  /** 挂载连接并发送首条消息（hello / resume），返回收到的消息列表；verified = 传输壳验证过的身份 */
+  const connect = (id: string, first: ClientMessage, verified?: { id: string } | null): ServerMessage[] => {
     inbox.set(id, [])
-    actor.attach(id, (m) => inbox.get(id)!.push(m))
+    actor.attach(id, (m) => inbox.get(id)!.push(m), verified)
     actor.message(id, first)
     return inbox.get(id)!
   }
@@ -235,5 +235,72 @@ describe('MatchActor 对局房内核（W4 服务器权威）', () => {
     const w = welcome(connect('b', { type: 'hello' }))
     expect(w.seatId).not.toBe(w0.seatId) // 等待期随机分配空位，不会满员转观战
     expect(w.snap.stalls.find((s) => s.id === w.seatId)!.human).toBe(true)
+  })
+})
+
+describe('MatchActor 身份裁决（服务端验证覆盖客户端自报）', () => {
+  it('壳注入已验证身份：结算落库认会话 id，hello 自报的伪造 id 作废', async () => {
+    const seen: SeatResultRecord[] = []
+    const { actor, connect } = setup(3, async (records) => {
+      seen.push(...records)
+      return records.map((r) => ({ seatId: r.seatId, old: 500, after: 501 }))
+    })
+    // 攻击者自报受害者 id，但壳层验证出的会话是 attacker-session
+    welcome(connect('a', { type: 'hello', player: { id: 'victim-id', name: '受害者' } }, { id: 'attacker-session' }))
+    actor.tick(2.5, 2.5)
+    actor.message('a', { type: 'intent', intent: { kind: 'restock', honestShare: 1 } })
+    actor.tick(600, 600)
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(seen).toHaveLength(1)
+    expect(seen[0]!.playerId).toBe('attacker-session') // 落库的是会话 id，不是自报的 victim-id
+  })
+
+  it('壳验证为无会话（null）：可入座可玩，但自报身份作废、结算不落库', async () => {
+    const seen: SeatResultRecord[] = []
+    const { actor, connect } = setup(3, async (records) => {
+      seen.push(...records)
+      return []
+    })
+    const w = welcome(connect('a', { type: 'hello', player: { id: 'fake-id' } }, null))
+    expect(w.spectating).toBe(false) // 有座位
+    actor.tick(600, 600)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(seen).toHaveLength(0) // 自报 id 不被采信
+  })
+
+  it('resume 防偷座：他人拿令牌续座被拒（身份对不上 → 降级新座位）', () => {
+    const { connect } = setup(3)
+    const w0 = welcome(connect('a', { type: 'hello', player: { id: 'user-a' } }))
+    const token = w0.seatToken!
+
+    // 攻击者持有受害者令牌，但会话身份对不上
+    const wThief = welcome(connect('b', { type: 'resume', token, player: { id: 'user-b' } }, { id: 'user-b' }))
+    expect(wThief.seatId).not.toBe(w0.seatId)
+    expect(wThief.seatToken).not.toBe(token) // 发的是新令牌
+
+    // 本人重连：同会话身份，令牌仍有效
+    const wSelf = welcome(connect('a2', { type: 'resume', token }, { id: 'user-a' }))
+    expect(wSelf.seatId).toBe(w0.seatId)
+  })
+
+  it('resume 防偷座：无会话者也不能续有主座位', () => {
+    const { connect } = setup(3)
+    const w0 = welcome(connect('a', { type: 'hello', player: { id: 'user-a' } }, { id: 'user-a' }))
+    const token = w0.seatToken!
+
+    const wGuest = welcome(connect('g', { type: 'resume', token }, null))
+    expect(wGuest.seatId).not.toBe(w0.seatId)
+  })
+
+  it('未做验证的壳（verified undefined，纯测试环境）：沿用信任自报的旧行为', () => {
+    const { connect } = setup(3)
+    const w0 = welcome(connect('a', { type: 'hello', player: { id: 'user-a' } }))
+    const token = w0.seatToken!
+    // 旧壳语义：同 id 续座成功
+    const w2 = welcome(connect('a2', { type: 'resume', token, player: { id: 'user-a' } }))
+    expect(w2.seatId).toBe(w0.seatId)
   })
 })
